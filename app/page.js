@@ -36,13 +36,15 @@ export default function Home() {
   }
 
   return (
-    
-      Scraper Multi-Video
-      Masukkan URL video (1 link per baris)
+    <div style={{ maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif', padding: '20px' }}>
+      <h1 style={{ textAlign: 'center' }}>Scraper Multi-Video</h1>
+      <p style={{ textAlign: 'center', fontSize: '14px', color: '#666' }}>Masukkan URL video (1 link per baris)</p>
       
-       setInputText(e.target.value)}
-        placeholder="https://facebook.com/...
-https://tiktok.com/..."
+      <textarea 
+        rows="6" 
+        value={inputText}
+        onChange={(e) => setInputText(e.target.value)}
+        placeholder="https://facebook.com/...&#10;https://tiktok.com/..."
         style={{ width: '100%', padding: '10px', boxSizing: 'border-box', borderRadius: '8px', border: '1px solid #ccc', marginBottom: '15px' }}
       />
       
@@ -54,22 +56,18 @@ https://tiktok.com/..."
         {loading ? 'Sedang Mencari Video (Tunggu bentar)...' : 'Mulai Scrape!'}
       </button>
 
-      {/* Area Hasil (Result) */}
+      {/* Area Hasil */}
       <div style={{ marginTop: '30px' }}>
         {results.map((item, index) => (
           <div key={index} style={{ padding: '15px', border: '1px solid #ddd', marginBottom: '15px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: '#fafafa' }}>
             
-            {/* Status Gagal */}
             {item.status !== 'sukses' ? (
               <div>
                 <p style={{ margin: '0 0 5px 0', fontSize: '12px', wordBreak: 'break-all', color: '#666' }}>Target: {item.url_asli}</p>
                 <p style={{ color: 'red', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>{item.pesan}</p>
               </div>
             ) : (
-              /* Status Sukses - Tampilan Kartu (Card) */
               <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-                
-                {/* Thumbnail Image */}
                 {item.thumbnail && (
                   <img 
                     src={item.thumbnail} 
@@ -77,15 +75,11 @@ https://tiktok.com/..."
                     style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', backgroundColor: '#eee' }} 
                   />
                 )}
-
-                {/* Info Text */}
                 <div style={{ flex: 1 }}>
                   <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#888', textTransform: 'uppercase', fontWeight: 'bold' }}>{item.platform}</p>
                   <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', lineHeight: '1.4' }}>
                     {item.title || 'Video Tanpa Judul'}
                   </h3>
-                  
-                  {/* Tombol Download mengarah ke File API Download */}
                   <a 
                     href={`/api/download?url=${encodeURIComponent(item.video_url)}`} 
                     download
@@ -100,5 +94,5 @@ https://tiktok.com/..."
         ))}
       </div>
     </div>
-  )
+  );
 }
