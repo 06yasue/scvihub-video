@@ -7,13 +7,20 @@ export const dynamic = 'force-dynamic';
 export async function POST(request) {
   try {
     const { urls } = await request.json();
-    if (!urls || !Array.isArray(urls)) return Response.json({ success: false, pesan: "Format array invalid." }, { status: 400 });
+    if (!urls || !Array.isArray(urls)) {
+      return Response.json({ success: false, pesan: "Format array invalid." }, { status: 400 });
+    }
 
-    // PENTING: Set agar chromium mendeteksi library linux di serverless
+    // PENTING: Setting khusus agar jalan lancar di serverless Vercel
     chromium.setHeadlessMode = true;
-    
-    const executablePath = await chromium.executablePath();
-    
+    chromium.graphics = false; // Mematikan grafis agar hemat memori di Vercel
+
+    // INI KUNCI SOLUSINYA: Vercel akan otomatis mendownload Chromium lengkap 
+    // dengan library linux (libnss3.so) dari link ini saat API dijalankan.
+    const executablePath = await chromium.executablePath(
+      'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar'
+    );
+
     const browser = await puppeteer.launch({
       args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       defaultViewport: chromium.defaultViewport,
@@ -69,7 +76,10 @@ export async function POST(request) {
           return { url_asli: urlTarget, platform: platformDitemukan, status: 'gagal', pesan: 'Sistem memblokir pencarian atau link privat.' };
         }
       } catch (err) {
-        await page.close();
+        // Mencegah memori bocor (memory leak) kalau ada website yang error/lemot
+        if (!page.isClosed()) {
+            await page.close();
+        }
         return { url_asli: urlTarget, status: 'error', pesan: err.message };
       }
     });
