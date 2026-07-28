@@ -9,10 +9,13 @@ export async function POST(request) {
     const { urls } = await request.json();
     if (!urls || !Array.isArray(urls)) return Response.json({ success: false, pesan: "Format array invalid." }, { status: 400 });
 
-    // Coba inisialisasi browser
+    // PENTING: Set agar chromium mendeteksi library linux di serverless
+    chromium.setHeadlessMode = true;
+    
     const executablePath = await chromium.executablePath();
+    
     const browser = await puppeteer.launch({
-      args: chromium.args,
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       defaultViewport: chromium.defaultViewport,
       executablePath: executablePath,
       headless: chromium.headless,
@@ -40,7 +43,7 @@ export async function POST(request) {
           }
         });
 
-        await page.goto(urlTarget, { waitUntil: 'networkidle2', timeout: 15000 }); // timeout gue kurangin dikit biar gak ditendang Vercel duluan
+        await page.goto(urlTarget, { waitUntil: 'networkidle2', timeout: 15000 });
 
         const metaData = await page.evaluate(() => {
           const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
@@ -63,7 +66,7 @@ export async function POST(request) {
         if (videoLink) {
           return { url_asli: urlTarget, platform: platformDitemukan, status: 'sukses', video_url: videoLink, title: metaData.title, thumbnail: metaData.thumbnail };
         } else {
-          return { url_asli: urlTarget, platform: platformDitemukan, status: 'gagal', pesan: 'Sistem memblokir pencarian.' };
+          return { url_asli: urlTarget, platform: platformDitemukan, status: 'gagal', pesan: 'Sistem memblokir pencarian atau link privat.' };
         }
       } catch (err) {
         await page.close();
@@ -77,7 +80,6 @@ export async function POST(request) {
     return Response.json({ success: true, data: hasilRaw.filter(item => item !== null) });
     
   } catch (error) {
-    // INI YANG GUE UBAH: Biar pesan error aslinya dikirim ke HP lu
     const pesanErrorAsli = error.message ? error.message : String(error);
     return Response.json({ success: false, pesan: "Detail Error Vercel: " + pesanErrorAsli }, { status: 500 });
   }
