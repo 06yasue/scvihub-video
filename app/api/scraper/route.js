@@ -9,6 +9,7 @@ export async function POST(request) {
     const { urls } = await request.json();
     if (!urls || !Array.isArray(urls)) return Response.json({ success: false, pesan: "Format array invalid." }, { status: 400 });
 
+    // Coba inisialisasi browser
     const executablePath = await chromium.executablePath();
     const browser = await puppeteer.launch({
       args: chromium.args,
@@ -39,9 +40,8 @@ export async function POST(request) {
           }
         });
 
-        await page.goto(urlTarget, { waitUntil: 'networkidle2', timeout: 20000 });
+        await page.goto(urlTarget, { waitUntil: 'networkidle2', timeout: 15000 }); // timeout gue kurangin dikit biar gak ditendang Vercel duluan
 
-        // INI YANG BARU: Ambil Data Judul dan Thumbnail
         const metaData = await page.evaluate(() => {
           const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
           const titleTag = document.querySelector('title')?.innerText;
@@ -75,7 +75,10 @@ export async function POST(request) {
     await browser.close(); 
     
     return Response.json({ success: true, data: hasilRaw.filter(item => item !== null) });
+    
   } catch (error) {
-    return Response.json({ success: false, pesan: "Error Server" }, { status: 500 });
+    // INI YANG GUE UBAH: Biar pesan error aslinya dikirim ke HP lu
+    const pesanErrorAsli = error.message ? error.message : String(error);
+    return Response.json({ success: false, pesan: "Detail Error Vercel: " + pesanErrorAsli }, { status: 500 });
   }
 }
