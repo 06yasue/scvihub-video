@@ -1,9 +1,10 @@
 export async function POST(request) {
   try {
-    const { urls } = await request.json();
+    const body = await request.json();
+    const urls = body.urls;
     
     if (!urls || !Array.isArray(urls)) {
-      return Response.json({ success: false, pesan: "Format URL tidak valid" }, { status: 400 });
+      return Response.json({ success: false, pesan: "Format URL tidak valid. Harus berupa array [\"url1\", \"url2\"]." }, { status: 400 });
     }
 
     const scrapePromises = urls.map(async (url) => {
@@ -11,16 +12,27 @@ export async function POST(request) {
         const urlTarget = url.trim();
         if (!urlTarget) return null;
 
-        // Header penyamaran tingkat lanjut agar dikira browser manusia
-        const response = await fetch(urlTarget, {
-          headers: { 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
+        // TRIK 1: Gunakan Mobile User-Agent. 
+        // FB dan IG sering memberikan HTML versi ringan (tanpa enkripsi JS berat) ke perangkat mobile lawas.
+        const headers = { 
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Sec-Fetch-Mode': 'navigate',
+          'Upgrade-Insecure-Requests': '1',
+          'Cache-Control': 'no-cache'
+        };
+        
+        // TRIK 2: Wajib aktifkan follow redirect untuk link seperti fb.watch / vt.tiktok.com
+        const response = await fetch(urlTarget, { 
+            headers, 
+            redirect: 'follow',
+            method: 'GET'
         });
+
+        if (!response.ok) {
+            throw new Error(`Akses ditolak server (HTTP ${response.status})`);
+        }
         
         const html = await response.text();
         let videoLink = null;
@@ -29,13 +41,18 @@ export async function POST(request) {
         // ==========================================
         // 1. STRATEGI: FACEBOOK / FB.WATCH
         // ==========================================
-        if (urlTarget.includes('facebook.com') || urlTarget.includes('fb.watch')) {
+        if (urlTarget.includes('facebook.com') || urlTarget.includes('fb.watch') || urlTarget.includes('fb.gg')) {
           platformDitemukan = "Facebook";
-          const regexFbHd = /"playable_url_quality_hd":"([^"]+)"/i;
-          const regexFbSd = /"playable_url":"([^"]+)"/i;
-          let match = html.match(regexFbHd) || html.match(regexFbSd);
+          // Tambahkan regex untuk browser_native_hd_url yang sering muncul di versi mobile
+          const regexFbHd = /"browser_native_hd_url":"([^"]+)"/i;
+          const regexFbSd = /"browser_native_sd_url":"([^"]+)"/i;
+          const regexPlayableHd = /"playable_url_quality_hd":"([^"]+)"/i;
+          const regexPlayableSd = /"playable_url":"([^"]+)"/i;
+          
+          let match = html.match(regexFbHd) || html.match(regexPlayableHd) || html.match(regexFbSd) || html.match(regexPlayableSd);
           if (match && match[1]) {
-            videoLink = match[1].replace(/\\\//g, '/').replace(/\\u0025/g, '%');
+            // Bersihkan unicode dan escape slashes
+            videoLink = match[1].replace(/\\\//g, '/').replace(/\\u0025/g, '%').replace(/\\u0026/g, '&');
           }
         } 
 
@@ -44,11 +61,11 @@ export async function POST(request) {
         // ==========================================
         else if (urlTarget.includes('tiktok.com')) {
           platformDitemukan = "TikTok";
-          // TikTok sering menaruh direct playAddr di dalam JSON state
           const regexTiktok = /"playAddr":"([^"]+)"/i;
-          let match = html.match(regexTiktok);
+          const regexTiktok2 = /"downloadAddr":"([^"]+)"/i;
+          let match = html.match(regexTiktok) || html.match(regexTiktok2);
           if (match && match[1]) {
-            videoLink = match[1].replace(/\\\//g, '/');
+            videoLink = match[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
           }
         }
 
@@ -60,7 +77,7 @@ export async function POST(request) {
           const regexIg = /"video_url":"([^"]+)"/i;
           let match = html.match(regexIg);
           if (match && match[1]) {
-            videoLink = match[1].replace(/\\\//g, '/');
+            videoLink = match[1].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
           }
         }
 
@@ -69,25 +86,25 @@ export async function POST(request) {
         // ==========================================
         else if (urlTarget.includes('twitter.com') || urlTarget.includes('x.com')) {
           platformDitemukan = "Twitter/X";
-          const regexTwitter = /"url":"([^"]+\.mp4[^"]*)"/i;
+          // Coba tangkap link langsung video twimg
+          const regexTwitter = /https:\/\/video\.twimg\.com\/(?:ext_tw_video|amplify_video)\/[^"]+\.mp4/i;
           let match = html.match(regexTwitter);
-          if (match && match[1]) {
-            videoLink = match[1].replace(/\\\//g, '/');
+          if (match && match[0]) {
+            videoLink = match[0].replace(/\\\//g, '/');
           }
         }
 
         // ==========================================
-        // 5. STRATEGI UMUM (Fallback untuk web video / blog biasa)
+        // 5. STRATEGI UMUM & FALLBACK META TAG
         // ==========================================
         if (!videoLink) {
-          // Cari tag Open Graph video
-          const regexOgVideo = /<meta\s+property="og:video"\s+content="([^"]+)"/i;
+          // Cari og:video atau og:video:secure_url
+          const regexOgVideo = /<meta\s+(?:property|name)="og:video(?::secure_url)?"\s+content="([^"]+)"/i;
           const matchOg = html.match(regexOgVideo);
           
           if (matchOg && matchOg[1]) {
             videoLink = matchOg[1].replace(/&amp;/g, '&');
           } else {
-            // Cari link berakhiran .mp4 atau .m3u8 secara bebas di halaman
             const regexGeneralMp4 = /(https?:\/\/[^\s"'<>]+\.(?:mp4|m3u8)[^\s"'<>]*)/i;
             const matchGeneral = html.match(regexGeneralMp4);
             if (matchGeneral && matchGeneral[1]) {
@@ -96,7 +113,9 @@ export async function POST(request) {
           }
         }
 
-        // Hasil akhir per URL
+        // ==========================================
+        // HASIL AKHIR PER URL
+        // ==========================================
         if (videoLink) {
           return { 
             url_asli: urlTarget, 
@@ -109,7 +128,7 @@ export async function POST(request) {
             url_asli: urlTarget, 
             platform: platformDitemukan,
             status: 'gagal', 
-            pesan: 'Link video terkunci sistem keamanan platform.' 
+            pesan: 'Link video disembunyikan oleh sistem keamanan platform. Butuh API khusus.' 
           };
         }
 
@@ -118,10 +137,13 @@ export async function POST(request) {
       }
     });
 
-    const hasil = await Promise.all(scrapePromises);
-    return Response.json({ success: true, data: hasil });
+    // Jalankan semua URL secara paralel dan buang hasil yang null (jika ada url kosong)
+    const hasilRaw = await Promise.all(scrapePromises);
+    const hasilAkhir = hasilRaw.filter(item => item !== null);
+
+    return Response.json({ success: true, data: hasilAkhir });
 
   } catch (error) {
-    return Response.json({ success: false, pesan: "Terjadi kesalahan pada server" }, { status: 500 });
+    return Response.json({ success: false, pesan: "Terjadi kesalahan pada server", error: error.message }, { status: 500 });
   }
 }
