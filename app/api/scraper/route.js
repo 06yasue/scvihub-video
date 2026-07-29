@@ -1,5 +1,5 @@
 import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
+import chromium from '@sparticuz/chromium-min';
 
 export const maxDuration = 60; 
 export const dynamic = 'force-dynamic';
@@ -11,12 +11,10 @@ export async function POST(request) {
       return Response.json({ success: false, pesan: "Format array invalid." }, { status: 400 });
     }
 
-    // Setting headless mode untuk serverless Vercel
+    // Setting mode serverless
     chromium.setHeadlessMode = true;
-    
-    // (Baris chromium.graphics = false; sudah dihapus karena bikin error)
 
-    // INI KUNCI SOLUSINYA: Vercel otomatis mendownload Chromium lengkap 
+    // Download Chromium dari luar agar tidak dipotong oleh batas 50MB Vercel
     const executablePath = await chromium.executablePath(
       'https://github.com/Sparticuz/chromium/releases/download/v123.0.1/chromium-v123.0.1-pack.tar'
     );
@@ -73,7 +71,7 @@ export async function POST(request) {
         if (videoLink) {
           return { url_asli: urlTarget, platform: platformDitemukan, status: 'sukses', video_url: videoLink, title: metaData.title, thumbnail: metaData.thumbnail };
         } else {
-          return { url_asli: urlTarget, platform: platformDitemukan, status: 'gagal', pesan: 'Sistem memblokir pencarian atau link privat.' };
+          return { url_asli: urlTarget, platform: platformDitemukan, status: 'gagal', pesan: 'Sistem memblokir pencarian.' };
         }
       } catch (err) {
         if (!page.isClosed()) {
